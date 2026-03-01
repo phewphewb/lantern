@@ -1,0 +1,4 @@
+# Managed by router-configurator — do not edit manually.
+{{- range .Services}}
+address=/{{.Name}}.{{$.DomainSuffix}}/{{.IP}}
+{{- end}}
