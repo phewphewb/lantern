@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SKIP_TESTS="${1:-}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BIN="$ROOT/bin"
 CMDS=(init discover validate setup sync certs ls)
 
-echo "Running tests..."
-go test ./...
+if [[ "$SKIP_TESTS" != "--skip-tests" ]]; then
+  echo "Running tests..."
+  go test ./...
+fi
 
 echo "Building binaries to $BIN/"
 mkdir -p "$BIN"

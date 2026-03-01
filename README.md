@@ -49,34 +49,19 @@ Other services can be added manually to `network.yaml` or by [implementing a new
 
 ---
 
-## Build
+## Install
 
 ```bash
-mkdir -p bin
-
-go build -o bin/lantern-init     ./cmd/init
-go build -o bin/lantern-discover ./cmd/discover
-go build -o bin/lantern-validate ./cmd/validate
-go build -o bin/lantern-setup    ./cmd/setup
-go build -o bin/lantern-sync     ./cmd/sync
-go build -o bin/lantern-certs    ./cmd/certs
-go build -o bin/lantern-ls       ./cmd/ls
+sudo ./install.sh
 ```
 
-The `lantern.sh` wrapper dispatches subcommands to the binaries in `bin/`:
+This builds all binaries, installs them to `/usr/local/lib/lantern/bin/`, and installs the `lantern` wrapper to `/usr/local/bin/`. Pass `--skip-tests` to skip the test run.
+
+To build locally without installing (e.g. during development):
 
 ```bash
-chmod +x lantern.sh
-./lantern.sh init
-```
-
-Optionally install the wrapper to your PATH:
-
-```bash
-sudo cp lantern.sh /usr/local/bin/lantern
-sudo chmod +x /usr/local/bin/lantern
-sudo mkdir -p /usr/local/lib/lantern/bin
-sudo cp bin/lantern-* /usr/local/lib/lantern/bin/
+./build.sh              # builds to ./bin/
+./lantern-local.sh init # run from the repo
 ```
 
 ---
