@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
+# lantern-local.sh — run lantern subcommands from the local bin/ directory
+# Usage: ./lantern-local.sh <subcommand> [args...]
 set -euo pipefail
 
-BIN="/usr/local/lib/lantern/bin"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+BIN="$ROOT/bin"
+
 CMD="${1:-}"
 shift || true
 
@@ -14,7 +18,7 @@ case "$CMD" in
   certs)    exec "$BIN/lantern-certs"    "$@" ;;
   ls)       exec "$BIN/lantern-ls"       "$@" ;;
   *)
-    echo "Usage: lantern {init|discover|validate|setup|sync|certs|ls}" >&2
+    echo "Usage: lantern-local.sh {init|discover|validate|setup|sync|certs|ls}" >&2
     exit 1
     ;;
 esac
