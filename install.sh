@@ -20,6 +20,7 @@ BUILD_ARGS=()
 "$ROOT/build.sh" "${BUILD_ARGS[@]}"
 
 # ── 2. Install ────────────────────────────────────────────────────────────────
+CMDS=(init discover validate setup sync certs ls)
 echo "==> Installing to $INSTALL_BIN..."
 mkdir -p "$INSTALL_BIN"
 for cmd in "${CMDS[@]}"; do
