@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"crypto/tls"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,7 +36,10 @@ func main() {
 
 	printer.Info("Scanning " + subnet + "...")
 
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := &http.Client{
+		Timeout:   2 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
 	reg := &scanner.Registry{}
 	reg.Register(fingerprints.NewFrigate(client))
 	reg.Register(fingerprints.NewTrueNAS(client))

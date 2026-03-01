@@ -21,8 +21,12 @@ func NewFrigate(client *http.Client) *FrigateFingerprinter {
 func (f *FrigateFingerprinter) Name() string { return "frigate" }
 
 func (f *FrigateFingerprinter) Probe(ctx context.Context, ip string) (scanner.Result, bool) {
-	for _, port := range []int{8971, 5000} {
-		url := fmt.Sprintf("http://%s:%d/api/version", ip, port)
+	type probe struct {
+		scheme string
+		port   int
+	}
+	for _, p := range []probe{{"https", 8971}, {"http", 5000}} {
+		url := fmt.Sprintf("%s://%s:%d/api/version", p.scheme, ip, p.port)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			continue
@@ -33,7 +37,7 @@ func (f *FrigateFingerprinter) Probe(ctx context.Context, ip string) (scanner.Re
 		}
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
-			return scanner.Result{Name: "frigate", IP: ip, Port: port}, true
+			return scanner.Result{Name: "frigate", IP: ip, Port: p.port}, true
 		}
 	}
 	return scanner.Result{}, false

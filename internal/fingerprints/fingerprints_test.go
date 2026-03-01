@@ -15,6 +15,7 @@ import (
 // while actually hitting the httptest.Server.
 type redirectTransport struct {
 	target string // e.g. "http://127.0.0.1:PORT"
+	inner  http.RoundTripper
 }
 
 func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -22,11 +23,19 @@ func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	req2 := req.Clone(req.Context())
 	req2.URL.Host = base.Host
 	req2.URL.Scheme = base.Scheme
-	return http.DefaultTransport.RoundTrip(req2)
+	inner := t.inner
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	return inner.RoundTrip(req2)
 }
 
 func testClient(serverURL string) *http.Client {
 	return &http.Client{Transport: &redirectTransport{target: serverURL}}
+}
+
+func testTLSClient(ts *httptest.Server) *http.Client {
+	return &http.Client{Transport: &redirectTransport{target: ts.URL, inner: ts.Client().Transport}}
 }
 
 // --- Frigate ---
@@ -64,6 +73,26 @@ func TestFrigateFingerprinter_NoMatch(t *testing.T) {
 	_, ok := f.Probe(context.Background(), "192.168.2.10")
 	if ok {
 		t.Error("expected no match but got one")
+	}
+}
+
+func TestFrigateFingerprinter_MatchesOnPort8971TLS(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/version" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	f := fingerprints.NewFrigate(testTLSClient(ts))
+	result, ok := f.Probe(context.Background(), "192.168.2.10")
+	if !ok {
+		t.Fatal("expected match on HTTPS port 8971, got none")
+	}
+	if result.Port != 8971 {
+		t.Errorf("Port=%d, want 8971", result.Port)
 	}
 }
 
