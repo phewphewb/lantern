@@ -3,17 +3,19 @@
 ## First-time setup
 
 ```bash
-# 1. Scan the network and generate network.yaml
+# 1. Generate a default network.yaml
+./router-configurator init
+
+# 2. Scan the network to fill in service IPs
 ./router-configurator discover
 
-# 2. Review and edit network.yaml if needed
-#    Then validate it
+# 3. Validate the result
 ./router-configurator validate --ping
 
-# 3. Preview what setup will do (optional)
+# 4. Preview what setup will do (optional)
 sudo ./router-configurator setup --dry-run
 
-# 4. Run setup
+# 5. Run setup
 sudo ./router-configurator setup
 ```
 
@@ -29,6 +31,42 @@ cert on each client device. Setup prints exact instructions at the end.
 # Then validate and rerun setup — it's idempotent
 ./router-configurator validate
 sudo ./router-configurator setup
+```
+
+---
+
+## Automatic IP monitoring (cron)
+
+Services on DHCP can change IP. `sync` detects changes and reconfigures
+automatically. Set `monitor.check_interval` in `network.yaml` and `setup`
+installs the cron job for you:
+
+```yaml
+monitor:
+  check_interval: 5m
+  log_max_size: 10MB
+```
+
+Then rerun setup:
+
+```bash
+sudo ./router-configurator setup
+# → Installing cron job... ✓  (*/5 * * * * ... sync --quiet)
+```
+
+`setup` is idempotent: rerunning it updates the interval if you change
+`check_interval`, and removes the cron entry entirely if you delete the field.
+Pass `--no-cron` to skip crontab management for a single run.
+
+All write commands (including `sync`) log to `/var/log/router-configurator.log`
+by default. The log file rotates automatically when it reaches `log_max_size`
+(renamed to `.1`, new file started).
+
+To test sync manually:
+
+```bash
+sudo ./router-configurator sync            # shows terminal output + writes log
+sudo ./router-configurator sync --dry-run  # preview only, no changes
 ```
 
 ---
@@ -82,6 +120,9 @@ domain_suffix: home           # services become <name>.home
 proxy_ip: 192.168.2.10        # IP of this machine
 cert_warn_days: 30            # warn when certs expire within N days
 
+monitor:
+  check_interval: 5m          # setup installs/removes sync cron at this interval
+
 services:
   - name: frigate
     ip: 192.168.2.10
@@ -102,12 +143,12 @@ services:
 
 ## Requires sudo
 
-Only `setup` requires root. All other commands run as the current user.
-
 ```
+init        no sudo
 discover    no sudo
 validate    no sudo
 certs       no sudo
 ls          no sudo
 setup       sudo required
+sync        sudo required  (may trigger setup)
 ```

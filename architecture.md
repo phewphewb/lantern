@@ -230,6 +230,31 @@ This keeps business logic free of formatting concerns and enables:
 - Silent mode for scripted use
 - Clean unit tests (implement `NullPrinter`)
 
+**All write commands** (`init`, `setup`, `certs renew`, `sync`) always write
+timestamped output to a log file. The path is resolved in priority order:
+
+1. `--log-file` CLI flag
+2. `monitor.log_file` from `network.yaml` (sync only)
+3. Default: `/var/log/router-configurator.log`
+
+Each command wires a `FilePrinter` alongside the `TerminalPrinter` via
+`MultiPrinter`. Terminal and log file output are always independent.
+
+```go
+// cmd/setup/main.go (same pattern in init, certs, sync)
+logPath := resolveLogFile(flagLogFile, defaultLogPath)
+rotating := logrotate.New(logPath, defaultLogMaxSize)
+
+printer := ui.NewMultiPrinter(
+    ui.NewFilePrinter(rotating),   // always active, timestamped
+    ui.NewTerminalPrinter(),        // always active, no timestamps
+)
+```
+
+| Terminal output | Log file |
+|---|---|
+| yes (no timestamps) | yes (timestamped, always) |
+
 ---
 
 ## Config Validation
@@ -378,6 +403,92 @@ This serves two purposes:
    from `setup`, `certs`, or `backup`
 2. Paths become configurable in the future without hunting through
    the codebase for hardcoded strings
+
+---
+
+## Mode-Agnostic Monitoring
+
+`sync` is the atomic unit of monitoring — one complete check-and-reconfigure
+cycle. It has no knowledge of who called it or how it was scheduled.
+
+```
+User runs manually  →  ./router-configurator sync
+Cron runs it        →  same binary, same code path
+Test calls it       →  same sync.Run(), injected mocks
+```
+
+All reconfiguration logic lives in `internal/sync/sync.go`. The
+`cmd/sync/main.go` entrypoint is a thin shell: parse flags, wire
+dependencies, call `sync.Run()`, exit.
+
+Cron is the scheduler — it requires no code. The user adds one line to
+root's crontab and the OS handles the rest.
+
+**Output is controlled by two independent mechanisms:**
+
+1. **`--quiet` flag** — suppresses all terminal/stdout output. The log
+   file is completely unaffected by this flag.
+
+2. **`monitor.log_file` config** — when set, `sync` writes all output
+   to the log file. The `--quiet` flag is completely unaffected by this.
+
+```go
+// cmd/sync/main.go
+var printers []ui.Printer
+
+if cfg.Monitor.LogFile != "" {
+    rotating := logrotate.New(cfg.Monitor.LogFile, cfg.Monitor.LogMaxSize)
+    printers = append(printers, ui.NewFilePrinter(rotating))
+}
+
+if !quiet {
+    printers = append(printers, ui.NewTerminalPrinter())
+}
+
+printer := ui.NewMultiPrinter(printers...)
+```
+
+| log_file set | --quiet | Terminal output | Log file |
+|---|---|---|---|
+| yes | no | yes (no timestamps) | yes (timestamped) |
+| yes | yes | no | yes |
+| no | no | yes | — |
+| no | yes | no | — |
+
+Typical cron setup with log file configured:
+
+```
+*/5 * * * *  /usr/local/bin/router-configurator sync --quiet
+```
+
+**Responsibilities are separated:**
+
+- `internal/logrotate/rotator.go` — `RotatingFile` implements `io.Writer`.
+  Checks file size before each write; renames to `.1` and reopens when
+  over the limit. No knowledge of formatting.
+- `ui.FilePrinter` — formats with timestamps, writes to an `io.Writer`.
+  No knowledge of rotation or file paths.
+- `ui.TerminalPrinter` — formats without timestamps, writes to stdout.
+- `ui.MultiPrinter` — fans output out to N printers.
+
+`internal/sync/sync.go` calls `printer.Info()` / `printer.Warn()` — it
+has no knowledge of how many outputs are active or what format they use.
+
+`setup` manages the `sync` cron job in root's crontab based on
+`monitor.check_interval`:
+
+- **Set** → install (or update) the cron entry for `sync --quiet`
+- **Absent / removed** → remove the cron entry if one exists
+
+This is idempotent: every `setup` run reconciles the crontab to match the
+current config. The cron entry is identified by a trailing comment tag so
+`setup` can find and replace or remove it without touching other entries:
+
+```
+*/5 * * * *  /usr/local/bin/router-configurator sync --quiet  # managed-by:router-configurator
+```
+
+Pass `--no-cron` to skip crontab management entirely for a single run.
 
 ---
 

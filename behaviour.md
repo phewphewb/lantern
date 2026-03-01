@@ -11,6 +11,69 @@ via domain names over HTTPS instead of raw IP addresses.
 
 ## Commands
 
+### `init`
+
+Generates a `network.yaml` file pre-populated with all fields, sensible
+defaults, and inline comments. The starting point before running
+`discover` or editing manually.
+
+**Flags:**
+- `--config string` — output path (default: `network.yaml`)
+- `--force` — overwrite if file already exists
+- `--log-file string` — override the default log file path
+  (default: `/var/log/router-configurator.log`)
+
+**Expected output:**
+```
+Writing network.yaml... ✓
+
+Next steps:
+  1. Run discover to fill in service IPs automatically:
+       ./router-configurator discover
+  2. Or edit network.yaml manually, then validate:
+       ./router-configurator validate --ping
+```
+
+**Generated file:**
+```yaml
+version: 1
+
+# Local domain suffix — services become <name>.<suffix>
+domain_suffix: home
+
+# IP of this machine (where nginx and dnsmasq will run)
+proxy_ip: ""
+
+# Warn in 'certs status' if a certificate expires within N days
+cert_warn_days: 30
+
+# Automatic IP monitoring (used by 'sync', scheduled via cron)
+monitor:
+  check_interval: 5m      # informational — used by 'sync' cron instructions
+  log_file: ""            # optional log file for sync output
+
+services:
+  # Add services here, or run: discover
+  # - name: frigate
+  #   ip: ""
+  #   port: 5000
+  #   websocket: true
+  #
+  # - name: truenas
+  #   ip: ""
+  #   port: 80
+  #
+  # - name: mainsail
+  #   ip: ""
+  #   port: 80
+  #   moonraker_port: 7125
+```
+
+**Error cases:**
+- File already exists → exit with message, suggest `--force` to overwrite
+
+---
+
 ### `discover`
 
 Scans the local network to identify known services and writes their IPs
@@ -68,6 +131,11 @@ Must be run with `sudo`. `discover` and `validate` do not require root.
   anything. No files written, no services restarted, no backup created.
 - `--config string` — path to config file (default: `network.yaml`)
 - `--verbose` — show debug output
+- `--log-file string` — override the default log file path
+  (default: `/var/log/router-configurator.log`). Independent of terminal
+  output — both are always active simultaneously.
+- `--no-cron` — skip cron job installation even if `monitor.check_interval`
+  is set in `network.yaml`
 
 **Flow:**
 1. Reads and validates `network.yaml`
@@ -81,7 +149,11 @@ Must be run with `sudo`. `discover` and `validate` do not require root.
 8. Writes Nginx config files per service
 9. Writes dnsmasq config
 10. Restarts `nginx` and `dnsmasq`
-11. Prints post-setup instructions for Bell router and client devices
+11. Reconciles the `sync` cron job in root's crontab:
+    - `monitor.check_interval` **set** → add or update the entry
+    - `monitor.check_interval` **absent** → remove the entry if present
+    Skipped entirely when `--no-cron` is passed.
+12. Prints post-setup instructions for Bell router and client devices
 
 **Expected output:**
 ```
@@ -106,6 +178,7 @@ Generating certificates...
 Writing Nginx config...   ✓
 Writing dnsmasq config... ✓
 Restarting services...    ✓
+Installing cron job...    ✓  (*/5 * * * * ... sync --quiet)
 
 Setup complete.
 
@@ -145,6 +218,9 @@ Setup complete.
   /etc/dnsmasq.d/local-services.conf
 
 [DRY RUN] Would restart: nginx, dnsmasq
+
+[DRY RUN] Would install cron job (root crontab):
+  */5 * * * *  /usr/local/bin/router-configurator sync --quiet
 
 No changes made.
 ```
@@ -221,6 +297,9 @@ Does not require root.
 - `--config string` — path to config file (default: `network.yaml`)
 - `--all` — renew all certs regardless of expiry (use with `renew`)
 - `--dry-run` — show what would be renewed without doing it
+- `--log-file string` — override the default log file path for `renew`
+  (default: `/var/log/router-configurator.log`). `status` is read-only
+  and never writes to the log file.
 
 **Expected output (`certs status`):**
 ```
@@ -299,18 +378,90 @@ Validating network.yaml...
 - Each `port` is in range 1–65535
 - No two services share the same `name`
 
+### `sync`
+
+Non-interactive check-and-reconfigure cycle. Probes each service for its
+current IP, compares against `network.yaml`, and runs `setup` automatically
+if anything changed. Designed to be called by cron or manually.
+Must be run with `sudo`.
+
+**Flags:**
+- `--config string` — path to config file (default: `network.yaml`)
+- `--quiet` — suppress terminal/stdout output. Log file is unaffected.
+- `--dry-run` — show what would change without applying anything
+- `--log-file string` — override the log file path. Takes precedence over
+  `monitor.log_file` from `network.yaml`
+  (default: `/var/log/router-configurator.log`).
+
+**Output — two independent controls:**
+- `--quiet` controls terminal/stdout output only
+- Log file output is always active; path resolved in this order:
+  `--log-file` flag → `monitor.log_file` config → `/var/log/router-configurator.log`
+- Both controls are unaffected by each other
+
+**Log rotation:**
+When the log file reaches `monitor.log_max_size`, it is renamed to
+`<log_file>.1` and a new file is started. Only one rotated file is kept.
+
+**Output format — terminal (no timestamps):**
+```
+IP change detected:
+  mainsail  192.168.2.30 → 192.168.2.31
+
+Updating network.yaml... ✓
+Running setup...         ✓
+Reconfigured successfully.
+```
+
+**Output format — log file (timestamps on every line):**
+```
+2024-01-15 14:32:05  IP change detected: mainsail 192.168.2.30 → 192.168.2.31
+2024-01-15 14:32:05  Updating network.yaml... ok
+2024-01-15 14:32:06  Running setup... ok
+2024-01-15 14:32:08  Reconfigured successfully
+```
+
+**No change — terminal:**
+```
+All service IPs unchanged. Nothing to do.
+```
+
+**No change — log file:**
+```
+2024-01-15 14:32:05  All service IPs unchanged. Nothing to do.
+```
+
+**Flow:**
+1. Reads `network.yaml`
+2. Probes each listed service for its current IP (non-interactively)
+3. Compares to existing config
+4. If nothing changed → exit 0
+5. If any IP changed → update `network.yaml`, run `setup`, log changes
+
+**Error cases:**
+- A service cannot be reached → log warning and skip, do not treat as
+  IP change
+- `setup` fails after IP update → auto-restore from backup, log error,
+  exit non-zero
+
 ---
 
 ## Configuration File (`network.yaml`)
 
 The file is the single source of truth for the entire setup.
-`discover` writes it. `setup` and `validate` read it.
+`init` generates it. `discover` fills in IPs. `setup`, `sync`, and
+`validate` read it.
 
 ```yaml
 version: 1
 domain_suffix: home
 proxy_ip: 192.168.2.10      # IP of this machine (Frigate server)
-cert_warn_days: 30          # warn in setup if a cert expires within N days
+cert_warn_days: 30          # warn in 'certs status' if cert expires within N days
+
+monitor:
+  check_interval: 5m        # setup installs a cron job at this interval
+  log_file: /var/log/router-configurator.log   # sync writes here; omit for stdout
+  log_max_size: 10MB        # rotate log file when it reaches this size
 
 services:
   - name: frigate
