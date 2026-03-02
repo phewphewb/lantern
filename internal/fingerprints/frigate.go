@@ -3,7 +3,9 @@ package fingerprints
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"lantern/internal/scanner"
 )
@@ -35,8 +37,11 @@ func (f *FrigateFingerprinter) Probe(ctx context.Context, ip string) (scanner.Re
 		if err != nil {
 			continue
 		}
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
+		// Frigate's /api/version returns a JSON-encoded version string (e.g. "0.14.1").
+		// Require the body to start with '"' to reject HTML catch-all responses.
+		if resp.StatusCode == http.StatusOK && strings.HasPrefix(strings.TrimSpace(string(body)), `"`) {
 			return scanner.Result{Name: "frigate", IP: ip, Port: p.port}, true
 		}
 	}

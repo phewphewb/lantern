@@ -3,7 +3,9 @@ package fingerprints
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"lantern/internal/scanner"
 )
@@ -29,8 +31,10 @@ func (f *MainsailFingerprinter) Probe(ctx context.Context, ip string) (scanner.R
 	if err != nil {
 		return scanner.Result{}, false
 	}
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
+	// Moonraker's /printer/info always includes "klipper" in the JSON response.
+	if resp.StatusCode == http.StatusOK && strings.Contains(string(body), "klipper") {
 		return scanner.Result{Name: "mainsail", IP: ip, Port: 7125}, true
 	}
 	return scanner.Result{}, false

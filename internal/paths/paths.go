@@ -27,6 +27,10 @@ func (p Paths) NginxConfFor(service, domainSuffix string) string {
 	return fmt.Sprintf("%s%s.%s.conf", p.NginxSitesDir, service, domainSuffix)
 }
 
+func (p Paths) NginxCAConf() string {
+	return p.NginxSitesDir + "lantern-ca.conf"
+}
+
 func (p Paths) CertFileFor(service, domainSuffix string) string {
 	return fmt.Sprintf("%s%s.%s.crt", p.CertDir, service, domainSuffix)
 }

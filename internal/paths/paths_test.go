@@ -48,3 +48,12 @@ func TestKeyFileFor(t *testing.T) {
 		t.Errorf("KeyFileFor: got %q, want suffix tuenas.home.key", got)
 	}
 }
+
+func TestNginxCAConf(t *testing.T) {
+	p := paths.Default()
+	got := p.NginxCAConf()
+	want := "/etc/nginx/sites-enabled/lantern-ca.conf"
+	if got != want {
+		t.Errorf("NginxCAConf: got %q want %q", got, want)
+	}
+}

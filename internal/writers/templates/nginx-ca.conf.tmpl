@@ -1,0 +1,10 @@
+server {
+    listen 80;
+    server_name {{.ProxyIP}};
+
+    location = /ca.crt {
+        alias {{.CARootDir}}rootCA.pem;
+        default_type application/x-x509-ca-cert;
+        add_header Content-Disposition 'attachment; filename="lantern-ca.crt"';
+    }
+}

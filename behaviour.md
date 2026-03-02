@@ -153,7 +153,7 @@ Must be run with `sudo`. `discover` and `validate` do not require root.
     - `monitor.check_interval` **set** → add or update the entry
     - `monitor.check_interval` **absent** → remove the entry if present
     Skipped entirely when `--no-cron` is passed.
-12. Prints post-setup instructions for Bell router and client devices
+12. Prints post-setup instructions for the router and client devices
 
 **Expected output:**
 ```
@@ -183,8 +183,8 @@ Installing cron job...    ✓  (*/5 * * * * ... sync --quiet)
 Setup complete.
 
 ─── Next steps ────────────────────────────────────────────
-1. Point your Bell router DNS to this machine:
-     Router: http://192.168.2.1 → Advanced → DNS → Primary DNS
+1. Point your router DNS to this machine:
+     Log in to your router's admin panel → DNS settings → Primary DNS
      Set to: 192.168.2.10
 
 2. Install the CA certificate on each client device:

@@ -125,6 +125,14 @@ func main() {
 	if err := nw.Write(cfg); err != nil {
 		restoreOrDie(backupDir, p, cfg, *cfgPath, err, printer)
 	}
+	caRootRaw, err := executor.Output("mkcert", "-CAROOT")
+	if err != nil {
+		restoreOrDie(backupDir, p, cfg, *cfgPath, err, printer)
+	}
+	caRootDir := strings.TrimSpace(string(caRootRaw))
+	if err := nw.WriteCA(cfg.ProxyIP, caRootDir); err != nil {
+		restoreOrDie(backupDir, p, cfg, *cfgPath, err, printer)
+	}
 	printer.Info("  ✓")
 
 	// Write dnsmasq config.
@@ -249,6 +257,7 @@ func printDryRun(cfg config.Config, p paths.Paths, noCron bool, printer ui.Print
 	for _, svc := range cfg.Services {
 		printer.Info("  " + p.NginxConfFor(svc.Name, cfg.DomainSuffix))
 	}
+	printer.Info("  " + p.NginxCAConf())
 	printer.Info("  " + p.DnsmasqConf)
 
 	printer.Info("\n[DRY RUN] Would restart: nginx, dnsmasq")
@@ -263,16 +272,16 @@ func printDryRun(cfg config.Config, p paths.Paths, noCron bool, printer ui.Print
 func printNextSteps(cfg config.Config, printer ui.Printer) {
 	printer.Info(`
 ─── Next steps ────────────────────────────────────────────
-1. Point your Bell router DNS to this machine:
-     Router: http://192.168.2.1 → Advanced → DNS → Primary DNS
+1. Point your router DNS to this machine:
+     Log in to your router's admin panel → DNS settings → Primary DNS
      Set to: ` + cfg.ProxyIP + `
 
 2. Install the CA certificate on each client device:
-     CA file: /home/user/.local/share/mkcert/rootCA.pem
+     Open http://` + cfg.ProxyIP + `/ca.crt in a browser to download it, then:
 
    Windows : double-click → install to "Trusted Root CAs"
    macOS   : Keychain Access → import → set to Always Trust
-   iOS     : download file → Settings → trust profile
+   iOS     : Safari → download → Settings → trust profile
    Android : Settings → Security → Install certificate
 ───────────────────────────────────────────────────────────`)
 }

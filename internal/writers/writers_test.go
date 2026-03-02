@@ -115,6 +115,31 @@ func TestNginxWriter_Reload_CallsSystemctl(t *testing.T) {
 	}
 }
 
+func TestNginxWriter_WriteCA_CreatesConfWithIPAndPath(t *testing.T) {
+	p := testPaths(t)
+	e := xec.NewDryRunExecutor(func(string) {})
+
+	w := writers.NewNginx(p, e)
+	if err := w.WriteCA("192.168.2.10", "/home/user/.local/share/mkcert"); err != nil {
+		t.Fatalf("WriteCA: %v", err)
+	}
+
+	data, err := os.ReadFile(p.NginxCAConf())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "192.168.2.10") {
+		t.Errorf("CA conf missing proxy IP: %s", content)
+	}
+	if !strings.Contains(content, "/home/user/.local/share/mkcert/rootCA.pem") {
+		t.Errorf("CA conf missing CA cert path: %s", content)
+	}
+	if !strings.Contains(content, "/ca.crt") {
+		t.Errorf("CA conf missing /ca.crt location: %s", content)
+	}
+}
+
 // --- Dnsmasq writer ---
 
 func TestDnsmasqWriter_OneLinePerService(t *testing.T) {

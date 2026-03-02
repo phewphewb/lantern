@@ -3,7 +3,9 @@ package fingerprints
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"lantern/internal/scanner"
 )
@@ -29,8 +31,9 @@ func (f *TrueNASFingerprinter) Probe(ctx context.Context, ip string) (scanner.Re
 	if err != nil {
 		return scanner.Result{}, false
 	}
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK && strings.Contains(string(body), "TrueNAS") {
 		return scanner.Result{Name: "truenas", IP: ip, Port: 80}, true
 	}
 	return scanner.Result{}, false

@@ -85,7 +85,7 @@ sudo ./lantern.sh setup --dry-run
 sudo ./lantern.sh setup
 ```
 
-After setup, point your router's primary DNS to this machine's IP and install the mkcert CA certificate on each client device. The `setup` command prints exact instructions at the end.
+After setup, point your router's primary DNS to this machine's IP. To trust the HTTPS certificates on other devices, open `http://<proxy-ip>/ca.crt` in a browser on each device — nginx serves the mkcert CA cert directly so you can download and install it without copying files. The `setup` command prints the exact URL and per-OS install steps.
 
 ---
 

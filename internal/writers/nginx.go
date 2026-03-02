@@ -11,20 +11,24 @@ import (
 	"lantern/internal/paths"
 )
 
-//go:embed templates/nginx-service.conf.tmpl
+//go:embed templates/nginx-service.conf.tmpl templates/nginx-ca.conf.tmpl
 var nginxTmplFS embed.FS
 
 type NginxWriter struct {
 	paths    paths.Paths
 	executor xec.Executor
 	tmpl     *template.Template
+	caTmpl   *template.Template
 }
 
 func NewNginx(p paths.Paths, e xec.Executor) *NginxWriter {
 	tmpl := template.Must(
 		template.ParseFS(nginxTmplFS, "templates/nginx-service.conf.tmpl"),
 	)
-	return &NginxWriter{paths: p, executor: e, tmpl: tmpl}
+	caTmpl := template.Must(
+		template.ParseFS(nginxTmplFS, "templates/nginx-ca.conf.tmpl"),
+	)
+	return &NginxWriter{paths: p, executor: e, tmpl: tmpl, caTmpl: caTmpl}
 }
 
 type nginxData struct {
@@ -60,6 +64,30 @@ func (w *NginxWriter) Write(cfg config.Config) error {
 			return fmt.Errorf("rendering nginx template for %s: %w", svc.Name, err)
 		}
 		f.Close()
+	}
+	return nil
+}
+
+type nginxCAData struct {
+	ProxyIP   string
+	CARootDir string
+}
+
+// WriteCA writes a dedicated nginx config that serves the mkcert CA certificate
+// at http://<proxyIP>/ca.crt so client devices can download and trust it.
+// caRootDir is the directory returned by `mkcert -CAROOT`.
+func (w *NginxWriter) WriteCA(proxyIP, caRootDir string) error {
+	if caRootDir != "" && caRootDir[len(caRootDir)-1] != '/' {
+		caRootDir += "/"
+	}
+	data := nginxCAData{ProxyIP: proxyIP, CARootDir: caRootDir}
+	f, err := os.Create(w.paths.NginxCAConf())
+	if err != nil {
+		return fmt.Errorf("creating nginx CA conf: %w", err)
+	}
+	defer f.Close()
+	if err := w.caTmpl.Execute(f, data); err != nil {
+		return fmt.Errorf("rendering nginx CA template: %w", err)
 	}
 	return nil
 }
