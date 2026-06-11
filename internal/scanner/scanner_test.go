@@ -9,9 +9,9 @@ import (
 
 // mockFingerprinter matches a single known IP.
 type mockFingerprinter struct {
-	name  string
-	ip    string
-	port  int
+	name string
+	ip   string
+	port int
 }
 
 func (m *mockFingerprinter) Name() string { return m.name }
@@ -64,6 +64,85 @@ func TestRun_FindsKnownService(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("frigate not found in scan results: %+v", results)
+	}
+}
+
+func TestRunDevices_IncludesUnidentifiedActiveHosts(t *testing.T) {
+	reg := &scanner.Registry{}
+	reg.Register(&mockFingerprinter{name: "frigate", ip: "192.168.2.1", port: 5000})
+	hostProbe := func(ctx context.Context, ip string) bool {
+		return ip == "192.168.2.2"
+	}
+
+	results, err := scanner.RunDevices(context.Background(), "192.168.2.0/30", reg, hostProbe)
+	if err != nil {
+		t.Fatalf("RunDevices: %v", err)
+	}
+
+	var foundKnown, foundUnknown bool
+	for _, r := range results {
+		switch r.IP {
+		case "192.168.2.1":
+			if r.Identified && r.Result.Name == "frigate" {
+				foundKnown = true
+			}
+		case "192.168.2.2":
+			if !r.Identified {
+				foundUnknown = true
+			}
+		}
+	}
+	if !foundKnown {
+		t.Errorf("known service not found in scan results: %+v", results)
+	}
+	if !foundUnknown {
+		t.Errorf("unidentified active host not found in scan results: %+v", results)
+	}
+}
+
+func TestRunDevices_AttachesMetadata(t *testing.T) {
+	reg := &scanner.Registry{}
+	reg.Register(&mockFingerprinter{name: "frigate", ip: "192.168.2.1", port: 5000})
+	hostProbe := func(ctx context.Context, ip string) bool {
+		return ip == "192.168.2.2"
+	}
+	metadataLookup := func(ctx context.Context, ip string) scanner.Metadata {
+		switch ip {
+		case "192.168.2.1":
+			return scanner.Metadata{Hostname: "frigate.local"}
+		case "192.168.2.2":
+			return scanner.Metadata{Hostname: "printer.local"}
+		default:
+			return scanner.Metadata{}
+		}
+	}
+
+	results, err := scanner.RunDevices(context.Background(), "192.168.2.0/30", reg, hostProbe, metadataLookup)
+	if err != nil {
+		t.Fatalf("RunDevices: %v", err)
+	}
+
+	hostnames := make(map[string]string)
+	for _, r := range results {
+		hostnames[r.IP] = r.Metadata.Hostname
+	}
+	if hostnames["192.168.2.1"] != "frigate.local" {
+		t.Errorf("known host metadata=%q, want frigate.local", hostnames["192.168.2.1"])
+	}
+	if hostnames["192.168.2.2"] != "printer.local" {
+		t.Errorf("unknown host metadata=%q, want printer.local", hostnames["192.168.2.2"])
+	}
+}
+
+func TestRun_ExcludesUnidentifiedActiveHosts(t *testing.T) {
+	reg := &scanner.Registry{}
+
+	results, err := scanner.Run(context.Background(), "192.168.2.0/30", reg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("Run returned unidentified hosts: %+v", results)
 	}
 }
 

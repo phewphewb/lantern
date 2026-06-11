@@ -1,0 +1,31 @@
+version: 1
+
+# Local domain suffix — services become <name>.<suffix>
+domain_suffix: home
+
+# IP of this machine (where nginx and dnsmasq will run)
+proxy_ip: ""
+
+# Warn in 'certs status' if a certificate expires within N days
+cert_warn_days: 30
+
+# Automatic IP monitoring (used by 'sync', scheduled via cron)
+monitor:
+  check_interval: 5m      # informational — used by 'sync' cron instructions
+  log_file: ""            # optional log file for sync output
+
+services:
+  # Add services here, or run: discover
+  # - name: frigate
+  #   ip: ""
+  #   port: 5000
+  #   websocket: true
+  #
+  # - name: truenas
+  #   ip: ""
+  #   port: 80
+  #
+  # - name: mainsail
+  #   ip: ""
+  #   port: 80
+  #   moonraker_port: 7125

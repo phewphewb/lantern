@@ -9,6 +9,9 @@
 # 2. Scan the network to fill in service IPs
 ./router-configurator discover
 
+# Optional: list discovered devices without writing network.yaml
+./router-configurator discover --list
+
 # 3. Validate the result
 ./router-configurator validate --ping
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
+	"time"
 )
 
 // ScanResult holds the outcome for a single probed IP.
@@ -12,12 +14,31 @@ type ScanResult struct {
 	IP         string
 	Result     Result
 	Identified bool
+	Metadata   Metadata
 }
+
+// Metadata contains optional facts discovered about a host.
+type Metadata struct {
+	Hostname string
+}
+
+// HostProbe reports whether a host appears active on the network.
+type HostProbe func(ctx context.Context, ip string) bool
+
+// MetadataLookup returns optional metadata for a host.
+type MetadataLookup func(ctx context.Context, ip string) Metadata
 
 // Run concurrently probes every host in subnet using registry.
 // subnet must be a CIDR string (e.g. "192.168.2.0/24").
-// Returns identified and unidentified active hosts.
+// Returns identified hosts.
 func Run(ctx context.Context, subnet string, registry *Registry) ([]ScanResult, error) {
+	return RunDevices(ctx, subnet, registry, nil)
+}
+
+// RunDevices concurrently probes every host in subnet using registry and, when
+// no known service matches, hostProbe. It returns both identified services and
+// active unidentified hosts.
+func RunDevices(ctx context.Context, subnet string, registry *Registry, hostProbe HostProbe, metadataLookups ...MetadataLookup) ([]ScanResult, error) {
 	ips, err := hostsInSubnet(subnet)
 	if err != nil {
 		return nil, fmt.Errorf("parsing subnet: %w", err)
@@ -33,8 +54,24 @@ func Run(ctx context.Context, subnet string, registry *Registry) ([]ScanResult, 
 			defer wg.Done()
 			result, ok := registry.Identify(ctx, ip)
 			if ok {
+				metadata := lookupMetadata(ctx, ip, metadataLookups)
 				mu.Lock()
-				results = append(results, ScanResult{IP: ip, Result: result, Identified: true})
+				results = append(results, ScanResult{
+					IP:         ip,
+					Result:     result,
+					Identified: true,
+					Metadata:   metadata,
+				})
+				mu.Unlock()
+				return
+			}
+			if hostProbe != nil && hostProbe(ctx, ip) {
+				metadata := lookupMetadata(ctx, ip, metadataLookups)
+				mu.Lock()
+				results = append(results, ScanResult{
+					IP:       ip,
+					Metadata: metadata,
+				})
 				mu.Unlock()
 			}
 		}(ip)
@@ -42,6 +79,58 @@ func Run(ctx context.Context, subnet string, registry *Registry) ([]ScanResult, 
 
 	wg.Wait()
 	return results, nil
+}
+
+func lookupMetadata(ctx context.Context, ip string, metadataLookups []MetadataLookup) Metadata {
+	var metadata Metadata
+	for _, lookup := range metadataLookups {
+		next := lookup(ctx, ip)
+		if metadata.Hostname == "" {
+			metadata.Hostname = next.Hostname
+		}
+	}
+	return metadata
+}
+
+// NewTCPHostProbe returns an unprivileged host probe that attempts TCP
+// connections to common LAN service ports.
+func NewTCPHostProbe(timeout time.Duration, ports ...int) HostProbe {
+	if len(ports) == 0 {
+		ports = []int{22, 53, 80, 443, 445, 5000, 7125, 8080, 8123, 8971}
+	}
+	return func(ctx context.Context, ip string) bool {
+		for _, port := range ports {
+			select {
+			case <-ctx.Done():
+				return false
+			default:
+			}
+
+			dialer := net.Dialer{Timeout: timeout}
+			conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, fmt.Sprintf("%d", port)))
+			if err != nil {
+				continue
+			}
+			conn.Close()
+			return true
+		}
+		return false
+	}
+}
+
+// NewHostnameLookup returns a metadata lookup that tries reverse DNS for a host.
+func NewHostnameLookup(timeout time.Duration) MetadataLookup {
+	resolver := net.DefaultResolver
+	return func(ctx context.Context, ip string) Metadata {
+		lookupCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		names, err := resolver.LookupAddr(lookupCtx, ip)
+		if err != nil || len(names) == 0 {
+			return Metadata{}
+		}
+		return Metadata{Hostname: strings.TrimSuffix(names[0], ".")}
+	}
 }
 
 // DetectSubnet returns the first non-loopback IPv4 CIDR found on a local interface.

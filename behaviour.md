@@ -79,14 +79,21 @@ services:
 Scans the local network to identify known services and writes their IPs
 into `network.yaml`.
 
+**Flags:**
+- `--config string` — path to config file (default: `network.yaml`)
+- `--list` — list discovered devices without writing `network.yaml`;
+  includes hostnames when reverse DNS provides them
+
 **Flow:**
 1. Detects the machine's local subnet (e.g. `192.168.2.0/24`) from its
    active network interface
 2. Concurrently probes all 254 possible hosts
-3. For each active host, hits known service API endpoints to fingerprint
-   the service
-4. Presents results to the user for confirmation
-5. Writes discovered IPs into `network.yaml`
+3. For each host, hits known service API endpoints to fingerprint the
+   service; if no known service matches, probes common TCP service ports to
+   detect active unidentified devices
+4. Looks up hostnames with reverse DNS for hosts it finds
+5. Presents results to the user for confirmation
+6. Writes discovered IPs into `network.yaml`
 
 **Expected output:**
 ```

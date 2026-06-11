@@ -75,6 +75,10 @@ To build locally without installing (e.g. during development):
 # 2. Scan the network to fill in service IPs automatically
 ./lantern.sh discover
 
+# Optional: list all active devices found during discovery without writing config
+# Hostnames are shown when reverse DNS provides them.
+./lantern.sh discover --list
+
 # 3. Validate the result (--ping also checks reachability)
 ./lantern.sh validate --ping
 
@@ -110,6 +114,12 @@ After setup, point your router's primary DNS to this machine's IP. To trust the 
 --log-file string  Override the default log file path
                    (default: /var/log/router-configurator.log)
                    Applies to: init, setup, certs renew, sync
+```
+
+### discover flags
+
+```
+--list    List discovered devices without writing network.yaml
 ```
 
 ### setup / sync flags
